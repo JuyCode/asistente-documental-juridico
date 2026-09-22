@@ -54,6 +54,9 @@ class AppConfig:
     # Claves de API (nunca deben committearse).
     gemini_api_key: str = ""
     openai_api_key: str = ""
+    # Clave que protege el área de administración (subida de PDFs).
+    # Si está vacía, nadie puede administrar: solo existe el chat del cliente.
+    admin_key: str = ""
     # Modelos (se puede sobrescribir con variables de entorno).
     llm_model: str = ""          # ej: "models/gemini-3.6-flash" o "gpt-4o-mini"
     embed_model: str = ""        # ej: "models/gemini-embedding-2" o "text-embedding-3-small"
@@ -122,6 +125,7 @@ def from_env() -> AppConfig:
         provider=provider,
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
+        admin_key=os.getenv("ADMIN_KEY", "").strip(),
         llm_model=os.getenv("LLM_MODEL", "").strip(),
         embed_model=os.getenv("EMBEDDING_MODEL", "").strip(),
         qdrant_url=os.getenv("QDRANT_URL", "").strip(),

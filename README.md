@@ -9,7 +9,20 @@ Garantías de comportamiento:
 - ✅ **Cero alucinación**: si un dato no está en los documentos, responde literalmente
   `No dispongo de esa información en los documentos cargados.`
 - ✅ **Siempre cita la fuente**: nombre del archivo + número de página.
-- ✅ **Nada depende de tu máquina**: todo vive en la nube (Streamlit y/o Qdrant Cloud).
+- ✅ **Modelo B2B**: el estudio carga los documentos **una sola vez** y el cliente
+  entra por el link público y **solo pregunta** (nunca ve la subida de archivos).
+
+---
+
+## 1. Cómo la ven el estudio y el cliente
+
+| | Estudio (admin) | Cliente (visitante) |
+|---|---|---|
+| Entra | Link público + clave de admin en el panel lateral | Link público, sin login |
+| Sube PDFs | ✅ (solo con `ADMIN_KEY`) | ❌ nunca |
+| Borra/regenera el índice | ✅ | ❌ |
+| Chat sobre los documentos | ✅ | ✅ |
+| Firma "No dispongo de esa información…" | ✅ | ✅ |
 
 ---
 
@@ -117,6 +130,8 @@ En el dashboard de tu app: **Settings → Secrets** y pega:
 ```toml
 PROVIDER = "gemini"
 GEMINI_API_KEY = "AIza..."
+ADMIN_KEY = "elige_una_clave_larga_y_secreta"
+
 # Si usas OpenAI en vez de Gemini:
 # PROVIDER = "openai"
 # OPENAI_API_KEY = "sk-..."
@@ -124,7 +139,12 @@ GEMINI_API_KEY = "AIza..."
 
 Guardas con **Save** y la app se reinicia sola.
 
-### Paso 5 — (Opcional) Añadir Qdrant Cloud para persistencia real
+> `ADMIN_KEY` es la única forma de cargar documentos. Compártela solo con tu equipo.
+
+### Paso 5 — (Recomendado) Añadir Qdrant Cloud para persistencia real
+Para que los documentos cargados **persistan en la nube** para todos los clientes
+(aunque la app se duerma por inactividad), activa Qdrant:
+
 1. Crea una cuenta gratis en <https://cloud.qdrant.io/>.
 2. Crea un cluster **free** y copia su URL y API key.
 3. Añade a los secretos:
@@ -135,8 +155,8 @@ QDRANT_API_KEY = "tu_clave"
 QDRANT_COLLECTION = "legal_contable_docs"
 ```
 
-4. A partir de ese momento los PDFs indexados **persisten en la nube**
-   para todos los clientes, entre sesiones.
+4. Sin Qdrant, la app usa el disco local del contenedor de Streamlit (efímero):
+   los documentos se pierden cuando la app duerme en el plan free.
 
 ### Paso 6 — Compartir el link con tus clientes
 Tu app queda disponible en:

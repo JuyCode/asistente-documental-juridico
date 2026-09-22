@@ -22,6 +22,7 @@
    core/pipeline.py -> recuperación + filtrado + generación
 =====================================================================
 """
+import hmac
 import os
 import tempfile
 from pathlib import Path
@@ -100,6 +101,18 @@ def render_source_expander(sources: list) -> None:
                 st.caption(src["text"])
 
 
+def check_password(config: AppConfig) -> bool:
+    """Autentica al administrador con comparación a prueba de timing.
+
+    La clave se define en los secretos/env (ADMIN_KEY). Si está vacía,
+    la administración queda deshabilitada (solo chat del cliente).
+    """
+    if not config.admin_key:
+        return False
+    candidate = st.session_state.get("admin_pass", "")
+    return hmac.compare_digest(candidate, config.admin_key)
+
+
 def load_existing_index(config: AppConfig) -> None:
     """Al iniciar, si hay un índice previo (local), lo restaura."""
     if st.session_state.index is not None:
@@ -128,6 +141,8 @@ if "embed" not in st.session_state:
     st.session_state.embed = None
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "admin_ok" not in st.session_state:
+    st.session_state.admin_ok = False
 
 # -------------------------------------------------------------------
 # Configuración + modelos
@@ -164,91 +179,124 @@ with st.sidebar:
     else:
         st.success(f"Proveedor: **{config.provider}**")
         st.caption(
-            f"LLM: `{config.llama_model}`\n\n"
-            f"Embeddings: `{config.embedding_model}`\n\n"
-            f"Vector DB: {'Qdrant Cloud' if config.uses_qdrant else 'Local (./data)'}"
+            f"Vector DB: {'Qdrant Cloud' if config.uses_qdrant else 'Local (efímero)'}"
         )
-        st.caption(f"Umbral de similitud: **{config.min_similarity}** · top_k: **{config.top_k}**")
-
-    # Carga de PDFs --------------------------------------------------------
-    st.subheader("📄 Documentos")
-    pdfs = st.file_uploader(
-        "Sube tus PDFs (contratos, escrituras, informes…)",
-        type=["pdf"],
-        accept_multiple_files=True,
-        key="pdfs",
-    )
-
-    if st.button("🔄 Indexar documentos", type="primary", use_container_width=True):
-        if config_problem:
-            st.error("Primero configura las claves de API.")
-        elif not pdfs:
-            st.warning("No hay archivos PDF para procesar.")
-        else:
-            with st.spinner("Extrayendo texto y generando embeddings…"):
-                existing = set(indexer.get_manifest(config))
-                new_nodes = []
-                new_names = []
-                skipped = 0
-
-                for f in pdfs:
-                    if f.name in existing:
-                        skipped += 1
-                        continue
-                    # Escribimos el archivo subido a un temporal para pypdf.
-                    with tempfile.NamedTemporaryFile(
-                        suffix=".pdf", delete=False
-                    ) as tmp:
-                        tmp.write(f.getbuffer())
-                        tmp_path = tmp.name
-                    try:
-                        docs = ingest.read_pdf(Path(tmp_path))
-                        new_nodes.extend(ingest.chunk_documents(docs))
-                        new_names.append(f.name)
-                    finally:
-                        Path(tmp_path).unlink(missing_ok=True)
-
-                # Obtenemos/creamos el índice y lo actualizamos.
-                idx = st.session_state.index or indexer.get_or_create_index(config)
-                indexer.insert_documents(idx, config, new_nodes)
-                indexer.save_manifest(config, existing | set(new_names))
-
-                st.session_state.index = idx
-                st.session_state.pipeline = RAGPipeline(idx, config, st.session_state.llm)
-                st.session_state.docs = indexer.get_manifest(config)
-                # Al cambiar los documentos, reiniciamos el chat.
-                st.session_state.messages = []
-
-                if new_names:
-                    st.success(f"✅ Indexados: {', '.join(new_names)}")
-                if skipped:
-                    st.info(f"⏭️ Ya estaban indexados: {skipped} archivo(s).")
-
-    # Documentos actualmente indexados -------------------------------------
-    if st.session_state.docs:
-        st.caption(f"**{len(st.session_state.docs)} documento(s) indexado(s):**")
-        for name in st.session_state.docs:
-            st.markdown(f"- `{name}`")
 
     st.divider()
 
-    # Acciones de sesión ----------------------------------------------------
+    # Acciones del visitante (siempre visibles) -----------------------------
+    st.subheader("💬 Sesión")
     if st.button("🧹 Limpiar chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
-    if st.button("🗑️ Borrar índice local", use_container_width=True):
-        indexer.clear_local_index(config)
-        st.session_state.index = None
-        st.session_state.pipeline = None
-        st.session_state.docs = []
-        st.session_state.messages = []
-        st.rerun()
+    st.divider()
+
+    # Área de administración (protegida) -----------------------------------
+    st.subheader("🔒 Administración")
+    if config.admin_key:
+        st.caption("Solo el equipo del estudio puede cargar documentos.")
+        with st.expander("Acceder como administrador", expanded=False):
+            admin_pass = st.text_input(
+                "Clave de administración",
+                type="password",
+                key="admin_pass",
+            )
+            if st.button("Ingresar", use_container_width=True):
+                if check_password(config):
+                    st.session_state.admin_ok = True
+                    st.rerun()
+                else:
+                    st.session_state.admin_ok = False
+                    st.error("Clave incorrecta.")
+    else:
+        st.caption("⚠️ ADMIN_KEY no configurada: la administración está deshabilitada.")
+        st.session_state.admin_ok = False
+
+    admin_ok = st.session_state.get("admin_ok", False)
+
+    if admin_ok:
+        st.success("✅ Modo administrador activo.")
+        st.caption("Los visitantes no ven estos controles.")
+
+        # Carga de PDFs ------------------------------------------------------
+        st.subheader("📄 Documentos del estudio")
+        pdfs = st.file_uploader(
+            "Sube los PDFs que los clientes podrán consultar",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key="pdfs",
+        )
+
+        if st.button("🔄 Indexar documentos", type="primary", use_container_width=True):
+            if config_problem:
+                st.error("Primero configura las claves de API.")
+            elif not pdfs:
+                st.warning("No hay archivos PDF para procesar.")
+            else:
+                with st.spinner("Extrayendo texto y generando embeddings…"):
+                    existing = set(indexer.get_manifest(config))
+                    new_nodes = []
+                    new_names = []
+                    skipped = 0
+
+                    for f in pdfs:
+                        if f.name in existing:
+                            skipped += 1
+                            continue
+                        # Escribimos el archivo subido a un temporal para pypdf.
+                        with tempfile.NamedTemporaryFile(
+                            suffix=".pdf", delete=False
+                        ) as tmp:
+                            tmp.write(f.getbuffer())
+                            tmp_path = tmp.name
+                        try:
+                            docs = ingest.read_pdf(Path(tmp_path))
+                            new_nodes.extend(ingest.chunk_documents(docs))
+                            new_names.append(f.name)
+                        finally:
+                            Path(tmp_path).unlink(missing_ok=True)
+
+                    # Obtenemos/creamos el índice y lo actualizamos.
+                    idx = st.session_state.index or indexer.get_or_create_index(config)
+                    indexer.insert_documents(idx, config, new_nodes)
+                    indexer.save_manifest(config, existing | set(new_names))
+
+                    st.session_state.index = idx
+                    st.session_state.pipeline = RAGPipeline(
+                        idx, config, st.session_state.llm
+                    )
+                    st.session_state.docs = indexer.get_manifest(config)
+                    # Al cambiar los documentos, reiniciamos el chat.
+                    st.session_state.messages = []
+
+                    if new_names:
+                        st.success(f"✅ Indexados: {', '.join(new_names)}")
+                    if skipped:
+                        st.info(f"⏭️ Ya estaban indexados: {skipped} archivo(s).")
+
+        # Documentos actualmente indexados ----------------------------------
+        if st.session_state.docs:
+            st.caption(f"**{len(st.session_state.docs)} documento(s) indexado(s):**")
+            for name in st.session_state.docs:
+                st.markdown(f"- `{name}`")
+
+        if st.button("🗑️ Borrar índice", use_container_width=True):
+            indexer.clear_local_index(config)
+            st.session_state.index = None
+            st.session_state.pipeline = None
+            st.session_state.docs = []
+            st.session_state.messages = []
+            st.rerun()
+
+        if st.button("🚪 Salir del modo admin", use_container_width=True):
+            st.session_state.admin_ok = False
+            st.rerun()
 
     st.divider()
     st.caption(
-        "🔒 El asistente responde **solo** con el contenido de tus documentos. "
-        "No usa conocimiento previo y cita cada fuente."
+        "🔒 El asistente responde **solo** con el contenido de los documentos "
+        "del estudio. No usa conocimiento previo y cita cada fuente."
     )
 
 # -------------------------------------------------------------------
@@ -256,8 +304,9 @@ with st.sidebar:
 # -------------------------------------------------------------------
 st.title("📚 Consultas sobre tus documentos")
 st.markdown(
-    "Haz preguntas sobre los PDFs cargados. Cada respuesta cita su **fuente** "
-    "(archivo y página). Si el dato no está en los documentos, te lo indicará."
+    "Asistente del estudio jurídico/contable. Responde **solo** con el "
+    "contenido de los documentos del estudio y cita su **fuente** "
+    "(archivo y página) en cada respuesta."
 )
 
 # -------------------------------------------------------------------
@@ -274,11 +323,11 @@ for msg in st.session_state.messages:
 no_docs = st.session_state.index is None
 chat_disabled = config_problem is not None
 
-placeholder = "Escribe tu consulta sobre los documentos…"
+placeholder = "Escribe tu consulta…"
 if no_docs:
-    placeholder = "Sube y indexa documentos primero (panel izquierdo)."
+    placeholder = "El estudio aún no ha publicado documentos."
 if chat_disabled:
-    placeholder = "Configura las claves de API para comenzar."
+    placeholder = "Documentos no disponibles en este momento."
 
 prompt = st.chat_input(placeholder, disabled=chat_disabled or no_docs)
 

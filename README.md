@@ -161,7 +161,7 @@ QDRANT_COLLECTION = "legal_contable_docs"
 ### Paso 6 — Compartir el link con tus clientes
 Tu app queda disponible en:
 ```
-https://TU_USUARIO-TU_REPO.streamlit.app
+https://asistente-documental-juridico-azs3hvkxwkxytpezrp4ku3.streamlit.app
 ```
 Ajustes útiles (derecho de la app → **⋮ → Settings → Share**):
 - **Make this app public** si quieres que cualquiera la use sin "invitación".

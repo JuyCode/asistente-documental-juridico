@@ -29,6 +29,10 @@ data/
 .mypy_cache/
 .ruff_cache/
 
+# Scripts de verificación local (no van al repo/Cloud)
+verify_deploy.py
+debug_frame.py
+
 # IDE / OS
 .idea/
 .vscode/

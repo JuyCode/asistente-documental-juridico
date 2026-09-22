@@ -1,0 +1,39 @@
+# ===== Seguridad: NUNCA subir secretos =====================
+# Variables de entorno locales
+.env
+*.env
+
+# Secretos de Streamlit (se configuran por el panel Cloud, no por archivo)
+.streamlit/secrets.toml
+
+# Configuración local de Streamlit
+.streamlit/config.toml
+
+# ===== Código interpretado ==================================
+__pycache__/
+*.py[cod]
+*.so
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# ===== Datos generados por la app ===========================
+# Índice vectorial local (modo sin Qdrant)
+data/
+
+# Archivos temporales / tests
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# River (Streamlit) ya no usa estas, se dejan por compatibilidad
+.streamlit/.cache/

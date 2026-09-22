@@ -1,0 +1,1 @@
+# Paquete "core": lógica de negocio del asistente RAG.
